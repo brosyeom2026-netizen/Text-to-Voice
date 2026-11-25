@@ -34,7 +34,7 @@ jobs:
         run: |
           unzip -o Text-to-Voice-Android-Project.zip -d extracted
 
-      - name: Find Android project
+      - name: Find Android project and fix ScrollView property
         run: |
           SETTINGS_FILE=$(find extracted \( -name "settings.gradle.kts" -o -name "settings.gradle" \) -print -quit)
           if [ -z "$SETTINGS_FILE" ]; then
@@ -44,19 +44,21 @@ jobs:
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
+          sed -i 's/\bfillViewport\b/isFillViewport/g' "$PROJECT_DIR/app/src/main/java/com/texttovoice/app/MainActivity.kt"
+
       - name: Build APK
         run: |
           cd "$PROJECT_DIR"
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            BUILD_CMD="./gradlew assembleDebug --stacktrace"
+            BUILD_CMD="./gradlew assembleDebug"
           else
-            BUILD_CMD="gradle assembleDebug --stacktrace"
+            BUILD_CMD="gradle assembleDebug"
           fi
 
           $BUILD_CMD > build.log 2>&1 || {
             echo "=== EXACT COMPILATION ERRORS ==="
-            grep -E "e: |error:|Execution failed|Caused by:|What went wrong" build.log -A 5 | tail -n 50
+            grep -E "^e: |^FAILURE:|^> " build.log
             exit 1
           }
 
