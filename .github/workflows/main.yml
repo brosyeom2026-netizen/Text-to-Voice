@@ -1,15 +1,13 @@
-name: Build Text to Voice APK
+name: Build APK
 
 on:
   push:
-    branches:
-      - main
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,50 +16,32 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: 17
 
       - name: Install Android SDK
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        uses: android-actions/setup-android@v3
 
+      # Gradle 8.9+ is required by Android Gradle Plugin 8.7.x (no wrapper in the repo)
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-
-      - name: Extract project ZIP
-        run: |
-          unzip -o Text-to-Voice-Android-Project.zip -d extracted
+          gradle-version: 8.9
 
       - name: Find Android project
+        id: find
         run: |
-          SETTINGS_FILE=$(find extracted \( -name "settings.gradle.kts" -o -name "settings.gradle" \) -print -quit)
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "Error: Could not find settings.gradle or settings.gradle.kts in extracted ZIP"
-            exit 1
-          fi
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          settings=$(find . -name settings.gradle.kts -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$settings" ]; then echo "No settings.gradle.kts found in repo"; exit 1; fi
+          dir=$(dirname "$settings")
+          echo "Android project: $dir"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: Build APK
-        run: |
-          cd "$PROJECT_DIR"
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            BUILD_CMD="./gradlew assembleDebug"
-          else
-            BUILD_CMD="gradle assembleDebug"
-          fi
-
-          $BUILD_CMD > build.log 2>&1 || {
-            echo "=== EXACT COMPILATION ERRORS ==="
-            grep -E "^e: |^FAILURE:|^> " build.log
-            exit 1
-          }
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Text-to-Voice-APK
-          path: extracted/**/app/build/outputs/apk/debug/*.apk
+          name: TextToVoice-debug-apk
+          path: ${{ steps.find.outputs.dir }}/app/build/outputs/apk/debug/*.apk
